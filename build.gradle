@@ -1,0 +1,30 @@
+apply plugin: "java"
+
+group = "org.reactivestreams"
+description = "Servlet API implementation of Reactive Streams"
+version = "1.0.0"
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+repositories {
+  mavenCentral()
+}
+
+dependencies {
+  compileOnly "javax.servlet:javax.servlet-api:4.0.0"
+
+  compile "org.reactivestreams:reactive-streams:1.0.1"
+
+  testCompile "org.reactivestreams:reactive-streams-tck:1.0.1"
+  testCompile "org.eclipse.jetty:jetty-server:9.4.7.v20170914"
+  testCompile "org.eclipse.jetty:jetty-client:9.4.7.v20170914"
+}
+
+test {
+  useTestNG()
+  // Needed because the test classes don't have any test annotations on them since
+  // they inherit all their tests
+  scanForTestClasses = false
+}
+
