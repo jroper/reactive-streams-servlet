@@ -10,8 +10,16 @@
  ************************************************************************/
 package org.reactivestreams.servlet;
 
+import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicReference;
+
+final class RunNode extends AtomicReference<RunNode> {
+  final Runnable runnable;
+  RunNode(final Runnable runnable) {
+    this.runnable = runnable;
+  }
+}
 
 /**
  * Executor that provides mutual exclusion between the operations submitted to it,
@@ -32,75 +40,36 @@ import java.util.concurrent.atomic.AtomicReference;
  * operations submitted recursively will run sequentially.
  */
 class NonBlockingMutexExecutor implements Executor {
-
-  /**
-   * We use an array for a queue, since the JDK doesn't provide any built in
-   * persistent collections, and these queues are generally going to be short enough
-   * that array copies won't be expensive (and will probably be cheaper than a
-   * persistent collection anyway).
-   */
-  private final AtomicReference<Runnable[]> state = new AtomicReference<>(null);
-
-  private static final Runnable[] empty = new Runnable[0];
+  private final AtomicReference<RunNode> last = new AtomicReference<>();
 
   @Override
   public void execute(Runnable command) {
-    Runnable[] prevState;
-    Runnable[] newState;
-
-    do {
-      prevState = state.get();
-      if (prevState == null) {
-        newState = empty;
-      } else {
-        newState = new Runnable[prevState.length + 1];
-        System.arraycopy(prevState, 0, newState, 0, prevState.length);
-        newState[prevState.length] = command;
-      }
-    } while (!state.compareAndSet(prevState, newState));
-
-    if (prevState == null) {
-      // We changed from null to a list of ops, that's mean it's our responsibility to run it
-      executeAll(command);
-    }
-
+    final RunNode newNode = new RunNode(Objects.requireNonNull(command, "Runnable must not be null"));
+    final RunNode prevLast = last.getAndSet(newNode);
+    // We changed from null to a list of ops, that's mean it's our responsibility to run it
+    if (prevLast == null) {
+      executeAll(newNode);
+    } else
+      prevLast.lazySet(newNode);
   }
 
-  private void executeAll(Runnable command) {
-    while (command != null) {
-      try {
-        command.run();
-      } catch (RuntimeException e) {
-        e.printStackTrace();
-      }
-      command = dequeueNextOpToExecute();
-    }
-  }
-
-  private Runnable dequeueNextOpToExecute() {
-    Runnable[] prevState;
-    Runnable[] newState;
-    Runnable nextOp;
-
-    do {
-      prevState = state.get();
-      if (prevState == null) {
-        throw new IllegalStateException("Must have a queue of pending elements while executing");
-      } else if (prevState.length == 0) {
-        nextOp = null;
-        newState = null;
-      } else {
-        nextOp = prevState[0];
-        if (prevState.length == 1) {
-          newState = empty;
-        } else {
-          newState = new Runnable[prevState.length - 1];
-          System.arraycopy(prevState, 1, newState, 0, newState.length);
+  private void executeAll(RunNode next) {
+    RunNode prev = next;
+    for(;;) {
+      final RunNode current = next;
+      if (current != null) {
+        try {
+          current.runnable.run();
+        } catch (RuntimeException e) {
+          e.printStackTrace();
+        } finally {
+          prev = current;
+          next = current.get();
         }
+      } else {
+        if(last.compareAndSet(prev, null)) break;
+        else next = prev.get();
       }
-    } while (!state.compareAndSet(prevState, newState));
-
-    return nextOp;
+    }
   }
-
 }
