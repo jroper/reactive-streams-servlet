@@ -38,8 +38,8 @@ public class ResponseSubscriber implements Subscriber<ByteBuffer> {
 
   private final Executor mutex = new NonBlockingMutexExecutor();
 
-  private volatile Subscription subscription;
-  private volatile State state = State.IDLE;
+  private Subscription subscription;
+  private State state = State.IDLE;
 
   public ResponseSubscriber(AsyncContext context) throws IOException {
     this.context = context;

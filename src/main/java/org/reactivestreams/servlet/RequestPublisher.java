@@ -32,9 +32,9 @@ public class RequestPublisher implements Publisher<ByteBuffer> {
 
   private final NonBlockingMutexExecutor mutex = new NonBlockingMutexExecutor();
 
-  private volatile Subscriber<? super ByteBuffer> subscriber;
-  private volatile long demand = 0;
-  private volatile boolean running = true;
+  private Subscriber<? super ByteBuffer> subscriber;
+  private long demand = 0;
+  private boolean running = true;
 
   public RequestPublisher(AsyncContext context, int readBufferLimit) throws IOException {
     this.inputStream = context.getRequest().getInputStream();
