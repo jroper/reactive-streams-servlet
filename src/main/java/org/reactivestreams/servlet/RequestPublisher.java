@@ -19,6 +19,7 @@ import javax.servlet.ReadListener;
 import javax.servlet.ServletInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Objects;
 
 /**
  * Reactive streams publisher that represents a request.
@@ -27,8 +28,9 @@ public class RequestPublisher implements Publisher<ByteBuffer> {
 
   private static final int MAX_SEQUENTIAL_READS = 8;
 
-  private final ServletInputStream inputStream;
+  private final ServletInputStream inputStream; // TODO This should be cleared when Publisher is done to allow it to be GC:Ed
   private final int readBufferLimit;
+  private final int sequentialReadLimit;
 
   private final NonBlockingMutexExecutor mutex = new NonBlockingMutexExecutor();
 
@@ -36,9 +38,16 @@ public class RequestPublisher implements Publisher<ByteBuffer> {
   private long demand = 0;
   private boolean running = true;
 
-  public RequestPublisher(AsyncContext context, int readBufferLimit) throws IOException {
+  public RequestPublisher(final AsyncContext context, final int readBufferLimit) throws IOException {
+    this (context, readBufferLimit, MAX_SEQUENTIAL_READS);
+  }
+
+  public RequestPublisher(final AsyncContext context, final int readBufferLimit, final int sequentialReadLimit) throws IOException {
     this.inputStream = context.getRequest().getInputStream();
     this.readBufferLimit = readBufferLimit;
+    this.sequentialReadLimit = sequentialReadLimit;
+    if (readBufferLimit <= 0) throw new IllegalArgumentException("readBufferLimit must be greater than 0");
+    if (sequentialReadLimit <= 0) throw new IllegalArgumentException("sequentialReadLimit must be greater than 0");
   }
 
   /**
@@ -55,21 +64,22 @@ public class RequestPublisher implements Publisher<ByteBuffer> {
   }
 
   private void maybeRead() {
-    int reads = 0;
-
-    while (running && demand > 0 && inputStream.isReady() && reads < MAX_SEQUENTIAL_READS) {
-      reads += 1;
-      ByteBuffer buffer = ByteBuffer.allocate(readBufferLimit);
+    int readsLeft = sequentialReadLimit;
+    ByteBuffer buffer = null;
+    while (running && demand > 0 && readsLeft > 0 && inputStream.isReady()) {
+      readsLeft -= 1;
       try {
-        int length = inputStream.read(buffer.array());
-        if (length == -1) {
-          running = false;
-          subscriber.onComplete();
-          subscriber = null;
-        } else {
-          buffer.limit(length);
-          subscriber.onNext(buffer);
-          demand -= 1;
+        if (buffer == null) buffer = ByteBuffer.allocate(readBufferLimit);
+        final int length = inputStream.read(buffer.array());
+        switch(length) {
+          case -1: handleOnComplete(); break;
+          case 0: break;
+          default:
+            buffer.limit(length);
+            subscriber.onNext(buffer);
+            buffer = null;
+            demand -= 1;
+            break;
         }
       } catch (IOException e) {
         handleError(e);
@@ -80,12 +90,12 @@ public class RequestPublisher implements Publisher<ByteBuffer> {
     // Integer.MAX_VALUE demand) the loop above can starve all other tasks from running (including, for example,
     // cancel signals). So we limit the number of sequential reads that we do, and if we reach that limit, we resubmit
     // to do any further reads, but giving the opportunity for other tasks to execute.
-    if (reads == MAX_SEQUENTIAL_READS) {
+    if (readsLeft == 0) {
       mutex.execute(this::maybeRead);
     }
   }
 
-  private void handleError(Throwable t) {
+  private void handleError(final Throwable t) {
     if (running) {
       running = false;
       subscriber.onError(t);
@@ -93,44 +103,50 @@ public class RequestPublisher implements Publisher<ByteBuffer> {
     }
   }
 
-  @Override
-  public void subscribe(Subscriber<? super ByteBuffer> subscriber) {
-    if (subscriber == null) {
-      throw new NullPointerException("Subscriber passed to subscribe must not be null");
+  private void handleOnComplete() {
+    if (running) {
+      running = false;
+      subscriber.onComplete();
+      subscriber = null;
     }
+  }
+
+  @Override
+  public void subscribe(final Subscriber<? super ByteBuffer> subscriber) {
+    Objects.requireNonNull(subscriber, "Subscriber passed to subscribe must not be null");
     mutex.execute(() -> {
       if (this.subscriber == null) {
         this.subscriber = subscriber;
-        inputStream.setReadListener(new Listener());
+        inputStream.setReadListener(new Listener()); // Do we need to set the read-listener *before* the first request for data?
         subscriber.onSubscribe(new RequestSubscription());
+      } else if (this.subscriber.equals(subscriber)) {
+        handleError(new IllegalStateException("Attempted to subscribe this Subscriber more than once for the same Publisher"));
       } else {
         subscriber.onSubscribe(new Subscription() {
-          @Override
-          public void request(long n) {
-          }
-          @Override
-          public void cancel() {
-          }
+          @Override public void request(long n) { }
+          @Override public void cancel() { }
         });
         subscriber.onError(new IllegalStateException("This publisher only supports one subscriber"));
       }
     });
   }
 
-  private class RequestSubscription implements Subscription {
+  private final class RequestSubscription implements Subscription {
     @Override
-    public void request(long n) {
+    public void request(final long n) {
       mutex.execute(() -> {
-        if (n <= 0) {
-          subscriber.onError(new IllegalArgumentException("Reative streams 3.9 spec violation: non-positive subscription request"));
-        } else if (demand == Long.MAX_VALUE) {
-          // Ignore, already demanded the maximum
-        } else {
-          demand += n;
-          if (demand < 0) {
-            demand = Long.MAX_VALUE;
+        if (running) {
+          if (n <= 0) {
+            handleError(new IllegalArgumentException("Reactive streams 3.9 spec violation: non-positive subscription request"));
+          } else {
+            if (demand < Long.MAX_VALUE) {
+              demand += n;
+              if (demand < 0) {
+                demand = Long.MAX_VALUE;
+              }
+            }
+            maybeRead();
           }
-          maybeRead();
         }
       });
     }
@@ -138,8 +154,8 @@ public class RequestPublisher implements Publisher<ByteBuffer> {
     @Override
     public void cancel() {
       mutex.execute(() -> {
-        subscriber = null;
         if (running) {
+          subscriber = null;
           running = false;
           handleCancel();
         }
@@ -155,17 +171,11 @@ public class RequestPublisher implements Publisher<ByteBuffer> {
 
     @Override
     public void onAllDataRead() throws IOException {
-      mutex.execute(() -> {
-        if (running) {
-          running = false;
-          subscriber.onComplete();
-          subscriber = null;
-        }
-      });
+      mutex.execute(RequestPublisher.this::handleOnComplete);
     }
 
     @Override
-    public void onError(Throwable t) {
+    public void onError(final Throwable t) {
       mutex.execute(() -> handleError(t));
     }
   }
