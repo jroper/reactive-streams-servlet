@@ -93,22 +93,32 @@ public class ResponseSubscriber implements Subscriber<ByteBuffer> {
   public void onNext(final ByteBuffer item) {
     Objects.requireNonNull(item, "Element passed to onNext must not be null");
     mutex.execute(() -> {
-      state = State.IDLE;
-      try {
-        if (item.hasArray()) {
-          outputStream.write(item.array(), item.arrayOffset(), item.remaining());
-        } else {
-          byte[] array = new byte[item.remaining()];
-          item.get(array);
-          outputStream.write(array);
-        }
-        // Jetty requires isReady to be invoked before invoking flush
-        if (outputStream.isReady()) {
-          outputStream.flush();
-        }
-        maybeRequest();
-      } catch (IOException e) {
-        streamError(e);
+      switch (state) {
+        case DEMANDING:
+          state = State.IDLE;
+          try {
+            if (item.hasArray()) {
+              outputStream.write(item.array(), item.arrayOffset(), item.remaining());
+            } else {
+              byte[] array = new byte[item.remaining()];
+              item.get(array);
+              outputStream.write(array);
+            }
+            // Jetty requires isReady to be invoked before invoking flush
+            if (outputStream.isReady()) {
+              outputStream.flush();
+            }
+            maybeRequest();
+          } catch (IOException e) {
+            streamError(e);
+          }
+          break;
+        case IDLE:
+          // Should not happen
+          throw new IllegalStateException("onNext with no demand");
+        case FINISHED:
+          // Ignore
+          break;
       }
     });
   }
