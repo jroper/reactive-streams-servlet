@@ -23,8 +23,14 @@ dependencies {
 
 test {
   useTestNG()
-  // Needed because the test classes don't have any test annotations on them since
-  // they inherit all their tests
-  scanForTestClasses = false
+
+  // Disabled due to https://github.com/eclipse/jetty.project/issues/2006
+  exclude '**/RequestPublishTest.class'
+
+  testLogging {
+    events "failed"
+    exceptionFormat "full"
+    showStackTraces true
+  }
 }
 
