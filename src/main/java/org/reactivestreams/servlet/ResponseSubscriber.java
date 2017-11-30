@@ -16,6 +16,7 @@ import org.reactivestreams.Subscription;
 import javax.servlet.*;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Objects;
 import java.util.concurrent.Executor;
 
 /**
@@ -41,7 +42,7 @@ public class ResponseSubscriber implements Subscriber<ByteBuffer> {
   private Subscription subscription;
   private State state = State.IDLE;
 
-  public ResponseSubscriber(AsyncContext context) throws IOException {
+  public ResponseSubscriber(final AsyncContext context) throws IOException {
     this.context = context;
     this.outputStream = context.getResponse().getOutputStream();
   }
@@ -58,7 +59,7 @@ public class ResponseSubscriber implements Subscriber<ByteBuffer> {
    *
    * @param t The error that occurred.
    */
-  protected void onOutputStreamError(Throwable t) {
+  protected void onOutputStreamError(final Throwable t) {
   }
 
   /**
@@ -70,14 +71,12 @@ public class ResponseSubscriber implements Subscriber<ByteBuffer> {
    *
    * @param t The error that occurred.
    */
-  protected void onPublisherError(Throwable t) {
+  protected void onPublisherError(final Throwable t) {
   }
 
   @Override
-  public void onSubscribe(Subscription subscription) {
-    if (subscription == null) {
-      throw new NullPointerException("Subscription passed to onSubscribe must not be null");
-    }
+  public void onSubscribe(final Subscription subscription) {
+    Objects.requireNonNull(subscription, "Subscription passed to onSubscribe must not be null");
     mutex.execute(() -> {
       if (this.subscription == null) {
         this.subscription = subscription;
@@ -91,10 +90,8 @@ public class ResponseSubscriber implements Subscriber<ByteBuffer> {
   }
 
   @Override
-  public void onNext(ByteBuffer item) {
-    if (item == null) {
-      throw new NullPointerException("Element passed to onNext must not be null");
-    }
+  public void onNext(final ByteBuffer item) {
+    Objects.requireNonNull(item, "Element passed to onNext must not be null");
     mutex.execute(() -> {
       state = State.IDLE;
       try {
@@ -118,18 +115,18 @@ public class ResponseSubscriber implements Subscriber<ByteBuffer> {
 
   private void maybeRequest() {
     if (outputStream.isReady() && state != State.DEMANDING) {
-      subscription.request(1);
       state = State.DEMANDING;
+      subscription.request(1);
     }
   }
 
-  private void streamError(Throwable t) {
+  private void streamError(final Throwable t) {
     switch (state) {
       case IDLE:
       case DEMANDING:
+        state = State.FINISHED;
         subscription.cancel();
         onOutputStreamError(t);
-        state = State.FINISHED;
         break;
       case FINISHED:
         // Already finished, nothing to do.
@@ -138,17 +135,15 @@ public class ResponseSubscriber implements Subscriber<ByteBuffer> {
   }
 
   @Override
-  public void onError(Throwable throwable) {
-    if (throwable == null) {
-      throw new NullPointerException("Exception passed to onError must not be null");
-    }
+  public void onError(final Throwable throwable) {
+    Objects.requireNonNull(throwable, "Exception passed to onError must not be null");
     mutex.execute(() -> {
       switch (state) {
         case IDLE:
         case DEMANDING:
+          state = State.FINISHED;
           onPublisherError(throwable);
           context.complete();
-          state = State.FINISHED;
           break;
         case FINISHED:
           // Already finished, nothing to do.
@@ -163,8 +158,8 @@ public class ResponseSubscriber implements Subscriber<ByteBuffer> {
       switch (state) {
         case IDLE:
         case DEMANDING:
-          context.complete();
           state = State.FINISHED;
+          context.complete();
           break;
         case FINISHED:
           // Already finished, nothing to do.
@@ -179,8 +174,8 @@ public class ResponseSubscriber implements Subscriber<ByteBuffer> {
       mutex.execute(() -> {
         switch (state) {
           case IDLE:
-            subscription.request(1);
             state = State.DEMANDING;
+            subscription.request(1);
             break;
           default:
             // Nothing to do
@@ -199,8 +194,8 @@ public class ResponseSubscriber implements Subscriber<ByteBuffer> {
     switch (state) {
       case IDLE:
       case DEMANDING:
-        subscription.cancel();
         state = State.FINISHED;
+        subscription.cancel();
         break;
       case FINISHED:
         // Already finished, nothing to do.
@@ -208,7 +203,7 @@ public class ResponseSubscriber implements Subscriber<ByteBuffer> {
     }
   }
 
-  private class SubscriberAsyncListener implements AsyncListener {
+  private final class SubscriberAsyncListener implements AsyncListener {
     @Override
     public void onComplete(AsyncEvent event) throws IOException {
       mutex.execute(ResponseSubscriber.this::requestComplete);
