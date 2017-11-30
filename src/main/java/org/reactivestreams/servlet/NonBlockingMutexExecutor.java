@@ -60,8 +60,9 @@ class NonBlockingMutexExecutor implements Executor {
       if (current != null) {
         try {
           current.runnable.run();
-        } catch (RuntimeException e) {
-          e.printStackTrace();
+        } catch (Throwable t) {
+          Thread currentThread = Thread.currentThread();
+          currentThread.getUncaughtExceptionHandler().uncaughtException(currentThread, t);
         } finally {
           prev = current;
           next = current.get();
