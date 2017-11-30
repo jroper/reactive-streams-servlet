@@ -11,47 +11,39 @@
 package org.reactivestreams.servlet;
 
 import org.eclipse.jetty.client.HttpClient;
+import org.eclipse.jetty.client.api.Request;
 import org.eclipse.jetty.client.api.Response;
 import org.eclipse.jetty.client.api.Result;
-import org.eclipse.jetty.server.Request;
-import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.server.ServerConnector;
-import org.eclipse.jetty.server.handler.AbstractHandler;
 import org.eclipse.jetty.util.Callback;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.tck.SubscriberWhiteboxVerification;
 import org.testng.annotations.*;
 
 import javax.servlet.AsyncContext;
-import javax.servlet.ServletException;
 import javax.servlet.ServletOutputStream;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
-@Test
-public class ResponseSubscriberWhiteboxTest extends SubscriberWhiteboxVerification<ByteBuffer> {
+public abstract class AbstractResponseSubscriberWhiteboxTest extends SubscriberWhiteboxVerification<ByteBuffer> implements WithVerificationServer {
 
-  private Server server;
+  private VerificationServer server;
   private HttpClient client;
   private int port;
   private volatile CompletableFuture<Subscriber<ByteBuffer>> nextSubscriber;
   private volatile AsyncContext currentAsyncContext;
   private volatile Throwable lastPublisherError;
 
-  public ResponseSubscriberWhiteboxTest() {
+  public AbstractResponseSubscriberWhiteboxTest() {
     super(ServletTestEnvironment.INSTANCE);
   }
 
   @BeforeClass
   public void start() throws Exception {
-    server = new Server(0);
-    server.setHandler(new AbstractHandler() {
-      @Override
-      public void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+    server = createServer();
+    port = server.start((request, response) -> {
+      try {
         if (nextSubscriber == null) {
           response.sendError(500, "No next subscriber");
         } else {
@@ -66,10 +58,10 @@ public class ResponseSubscriberWhiteboxTest extends SubscriberWhiteboxVerificati
             }
           });
         }
+      } catch (IOException e) {
+        throw new RuntimeException(e);
       }
     });
-    server.start();
-    port = ((ServerConnector) server.getConnectors()[0]).getLocalPort();
   }
 
   @AfterClass
@@ -94,8 +86,8 @@ public class ResponseSubscriberWhiteboxTest extends SubscriberWhiteboxVerificati
     currentAsyncContext = null;
     lastPublisherError = null;
     nextSubscriber = new CompletableFuture<>();
-    client.newRequest("http://localhost:" + port)
-        .send(new ProbeListener(probe));
+    Request request = client.newRequest("http://localhost:" + port);
+    request.send(new ProbeListener(probe, request));
     try {
       Subscriber<ByteBuffer> subscriber = nextSubscriber.get(1, TimeUnit.SECONDS);
       nextSubscriber = null;
@@ -110,14 +102,15 @@ public class ResponseSubscriberWhiteboxTest extends SubscriberWhiteboxVerificati
     return ByteBuffer.wrap(new byte[] {(byte) element});
   }
 
-  private class ProbeListener implements SubscriberPuppet, Response.CompleteListener, Response.HeadersListener,
-      Response.AsyncContentListener {
+  private class ProbeListener implements SubscriberPuppet, Response.CompleteListener, Response.AsyncContentListener {
 
     private final WhiteboxSubscriberProbe<ByteBuffer> probe;
-    private volatile Response response;
+    private final Request request;
 
-    public ProbeListener(WhiteboxSubscriberProbe<ByteBuffer> probe) {
+    public ProbeListener(WhiteboxSubscriberProbe<ByteBuffer> probe, Request request) {
       this.probe = probe;
+      this.request = request;
+      probe.registerOnSubscribe(this);
     }
 
     @Override
@@ -140,19 +133,13 @@ public class ResponseSubscriberWhiteboxTest extends SubscriberWhiteboxVerificati
     }
 
     @Override
-    public void onHeaders(Response response) {
-      this.response = response;
-      probe.registerOnSubscribe(this);
-    }
-
-    @Override
     public void triggerRequest(long elements) {
       // TCP will automatically do this
     }
 
     @Override
     public void signalCancel() {
-      response.abort(new RuntimeException("Cancelled"));
+      request.abort(new RuntimeException("Cancelled"));
 
       // We abort the response, which should close the connection,
       // but for some reason Jetty doesn't seem to detect this until
@@ -165,6 +152,7 @@ public class ResponseSubscriberWhiteboxTest extends SubscriberWhiteboxVerificati
           stream.flush();
         }
       } catch (IOException e) {
+        // Ignore, we expect to get an exception
       }
     }
   }

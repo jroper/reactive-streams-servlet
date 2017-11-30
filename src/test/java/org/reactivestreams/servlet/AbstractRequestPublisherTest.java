@@ -12,18 +12,11 @@ package org.reactivestreams.servlet;
 
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.api.ContentProvider;
-import org.eclipse.jetty.server.Request;
-import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.server.ServerConnector;
-import org.eclipse.jetty.server.handler.AbstractHandler;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.tck.PublisherVerification;
 import org.testng.annotations.*;
 
 import javax.servlet.AsyncContext;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Iterator;
@@ -32,24 +25,23 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
-public class RequestPublisherTest extends PublisherVerification<ByteBuffer> {
+public abstract class AbstractRequestPublisherTest extends PublisherVerification<ByteBuffer> implements WithVerificationServer {
 
-  private Server server;
+  private VerificationServer server;
   private HttpClient client;
   private List<AsyncContext> requests;
   private int port;
   private volatile CompletableFuture<Publisher<ByteBuffer>> nextPublisher;
 
-  public RequestPublisherTest() {
+  public AbstractRequestPublisherTest() {
     super(ServletTestEnvironment.INSTANCE);
   }
 
   @BeforeClass
   public void start() throws Exception {
-    server = new Server(0);
-    server.setHandler(new AbstractHandler() {
-      @Override
-      public void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+    server = createServer();
+    port = server.start((request, response) -> {
+      try {
         if (nextPublisher == null) {
           response.sendError(500, "No next publisher");
         } else {
@@ -59,10 +51,10 @@ public class RequestPublisherTest extends PublisherVerification<ByteBuffer> {
           // if we read more than one byte in each read.
           nextPublisher.complete(new RequestPublisher(context, 1));
         }
+      } catch (IOException e) {
+        throw new RuntimeException(e);
       }
     });
-    server.start();
-    port = ((ServerConnector) server.getConnectors()[0]).getLocalPort();
   }
 
   @AfterClass

@@ -11,51 +11,42 @@
 package org.reactivestreams.servlet;
 
 import org.eclipse.jetty.client.HttpClient;
-import org.eclipse.jetty.server.Request;
-import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.server.ServerConnector;
-import org.eclipse.jetty.server.handler.AbstractHandler;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.tck.SubscriberBlackboxVerification;
 import org.testng.annotations.*;
 
 import javax.servlet.AsyncContext;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
-@Test
-public class ResponseSubscriberBlackboxTest extends SubscriberBlackboxVerification<ByteBuffer> {
+public abstract class AbstractResponseSubscriberBlackboxTest extends SubscriberBlackboxVerification<ByteBuffer> implements WithVerificationServer {
 
-  private Server server;
+  private VerificationServer server;
   private HttpClient client;
   private int port;
   private volatile CompletableFuture<Subscriber<ByteBuffer>> nextSubscriber;
 
-  public ResponseSubscriberBlackboxTest() {
+  public AbstractResponseSubscriberBlackboxTest() {
     super(ServletTestEnvironment.INSTANCE);
   }
 
   @BeforeClass
   public void start() throws Exception {
-    server = new Server(0);
-    server.setHandler(new AbstractHandler() {
-      @Override
-      public void handle(String target, Request baseRequest, HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+    server = createServer();
+    port = server.start((request, response) -> {
+      try {
         if (nextSubscriber == null) {
           response.sendError(500, "No next subscriber");
         } else {
           AsyncContext context = request.startAsync();
           nextSubscriber.complete(new ResponseSubscriber(context));
         }
+      } catch (IOException e) {
+        throw new RuntimeException(e);
       }
     });
-    server.start();
-    port = ((ServerConnector) server.getConnectors()[0]).getLocalPort();
   }
 
   @AfterClass
