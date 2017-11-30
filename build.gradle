@@ -20,6 +20,7 @@ dependencies {
   testCompile "org.eclipse.jetty:jetty-server:9.4.7.v20170914"
   testCompile "org.eclipse.jetty:jetty-client:9.4.7.v20170914"
   testCompile "org.apache.tomcat.embed:tomcat-embed-core:9.0.1"
+  testCompile "io.undertow:undertow-servlet:1.4.12.Final"
 }
 
 test {

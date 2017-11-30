@@ -48,9 +48,7 @@ public abstract class AbstractResponseSubscriberWhiteboxTest extends SubscriberW
           response.sendError(500, "No next subscriber");
         } else {
           currentAsyncContext = request.startAsync();
-          if (response.getOutputStream().isReady()) {
-            response.flushBuffer();
-          }
+          response.flushBuffer();
           nextSubscriber.complete(new ResponseSubscriber(currentAsyncContext) {
             @Override
             protected void onPublisherError(Throwable t) {
