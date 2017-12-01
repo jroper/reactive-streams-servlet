@@ -1,0 +1,10 @@
+description = "Test harness for Servlet API implementation of Reactive Streams"
+
+dependencies {
+  compileOnly "javax.servlet:javax.servlet-api:$servletVersion"
+
+  compile project(":reactive-streams-servlet")
+
+  compile "org.reactivestreams:reactive-streams-tck:$reactiveStreamsVersion"
+  compile "org.eclipse.jetty:jetty-client:$jettyVersion"
+}

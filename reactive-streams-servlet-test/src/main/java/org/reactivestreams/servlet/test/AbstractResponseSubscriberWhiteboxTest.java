@@ -8,7 +8,7 @@
  * You should have received a copy of the CC0 legalcode along with this  *
  * work. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.*
  ************************************************************************/
-package org.reactivestreams.servlet;
+package org.reactivestreams.servlet.test;
 
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.api.Request;
@@ -16,6 +16,7 @@ import org.eclipse.jetty.client.api.Response;
 import org.eclipse.jetty.client.api.Result;
 import org.eclipse.jetty.util.Callback;
 import org.reactivestreams.Subscriber;
+import org.reactivestreams.servlet.ResponseSubscriber;
 import org.reactivestreams.tck.SubscriberWhiteboxVerification;
 import org.testng.annotations.*;
 

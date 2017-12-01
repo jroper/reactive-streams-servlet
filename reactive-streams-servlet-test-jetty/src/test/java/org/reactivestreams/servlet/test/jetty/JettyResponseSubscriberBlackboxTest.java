@@ -8,10 +8,10 @@
  * You should have received a copy of the CC0 legalcode along with this  *
  * work. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.*
  ************************************************************************/
-package org.reactivestreams.servlet;
+package org.reactivestreams.servlet.test.jetty;
 
-import org.reactivestreams.tck.TestEnvironment;
+import org.reactivestreams.servlet.test.AbstractResponseSubscriberBlackboxTest;
+import org.testng.annotations.Test;
 
-public class ServletTestEnvironment {
-  public static final TestEnvironment INSTANCE = new TestEnvironment(100);
-}
+@Test
+public class JettyResponseSubscriberBlackboxTest extends AbstractResponseSubscriberBlackboxTest implements WithJettyServer { }

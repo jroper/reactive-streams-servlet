@@ -1,8 +1,9 @@
-package org.reactivestreams.servlet;
+package org.reactivestreams.servlet.test.tomcat;
 
 import org.apache.catalina.Context;
 import org.apache.catalina.startup.Tomcat;
 import org.apache.tomcat.util.http.fileupload.FileUtils;
+import org.reactivestreams.servlet.test.WithVerificationServer;
 
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;

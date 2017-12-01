@@ -1,1 +1,6 @@
-rootProject.name = "reactive-streams-servlet"
+rootProject.name = "reactive-streams-servlet-parent"
+
+include "reactive-streams-servlet"
+include "reactive-streams-servlet-test"
+include "reactive-streams-servlet-test-jetty"
+include "reactive-streams-servlet-test-tomcat"
