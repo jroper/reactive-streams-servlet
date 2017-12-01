@@ -1,0 +1,8 @@
+description = "Jetty verification for the Servlet API implementation of Reactive Streams"
+version = "1.0.0"
+
+dependencies {
+  testCompile project(":reactive-streams-servlet-test")
+  testCompile "org.apache.tomcat.embed:tomcat-embed-core:$tomcatVersion"
+}
+

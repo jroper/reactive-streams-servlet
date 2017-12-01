@@ -1,0 +1,10 @@
+description = "Servlet API implementation of Reactive Streams"
+
+dependencies {
+  compileOnly "javax.servlet:javax.servlet-api:$servletVersion"
+
+  compile "org.reactivestreams:reactive-streams:$reactiveStreamsVersion"
+
+  testCompile "org.reactivestreams:reactive-streams-tck:$reactiveStreamsVersion"
+  testCompile "org.eclipse.jetty:jetty-client:$jettyVersion"
+}

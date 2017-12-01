@@ -1,37 +1,34 @@
-apply plugin: "java"
-
-group = "org.reactivestreams"
-description = "Servlet API implementation of Reactive Streams"
-version = "1.0.0"
-
-sourceCompatibility = 1.8
-targetCompatibility = 1.8
-
-repositories {
-  mavenCentral()
-}
-
-dependencies {
-  compileOnly "javax.servlet:javax.servlet-api:4.0.0"
-
-  compile "org.reactivestreams:reactive-streams:1.0.1"
-
-  testCompile "org.reactivestreams:reactive-streams-tck:1.0.1"
-  testCompile "org.eclipse.jetty:jetty-server:9.4.7.v20170914"
-  testCompile "org.eclipse.jetty:jetty-client:9.4.7.v20170914"
-  testCompile "org.apache.tomcat.embed:tomcat-embed-core:9.0.1"
-}
-
-test {
-  useTestNG()
-
-  // Disabled due to https://github.com/eclipse/jetty.project/issues/2006
-  exclude '**/JettyRequestPublisherTest.class'
-
-  testLogging {
-    events "failed"
-    exceptionFormat "full"
-    showStackTraces true
+allprojects {
+  repositories {
+    mavenCentral()
   }
+}
+
+subprojects {
+  apply plugin: "java"
+
+  group = "org.reactivestreams"
+  version = "1.0.0"
+
+  ext {
+    reactiveStreamsVersion = "1.0.1"
+    servletVersion = "4.0.0"
+    jettyVersion = "9.4.7.v20170914"
+    tomcatVersion = "9.0.1"
+  }
+
+  sourceCompatibility = 1.8
+  targetCompatibility = 1.8
+
+  test {
+    useTestNG()
+
+    testLogging {
+      events "failed"
+      exceptionFormat "full"
+      showStackTraces true
+    }
+  }
+
 }
 
