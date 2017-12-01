@@ -117,7 +117,7 @@ public class RequestPublisher implements Publisher<ByteBuffer> {
     mutex.execute(() -> {
       if (this.subscriber == null) {
         this.subscriber = subscriber;
-        inputStream.setReadListener(new Listener()); // Do we need to set the read-listener *before* the first request for data?
+        inputStream.setReadListener(new Listener());
         subscriber.onSubscribe(new RequestSubscription());
       } else if (this.subscriber.equals(subscriber)) {
         handleError(new IllegalStateException("Attempted to subscribe this Subscriber more than once for the same Publisher"));
@@ -139,13 +139,16 @@ public class RequestPublisher implements Publisher<ByteBuffer> {
           if (n <= 0) {
             handleError(new IllegalArgumentException("Reactive streams 3.9 spec violation: non-positive subscription request"));
           } else {
+            boolean requiresRead = demand == 0;
             if (demand < Long.MAX_VALUE) {
               demand += n;
               if (demand < 0) {
                 demand = Long.MAX_VALUE;
               }
             }
-            maybeRead();
+            if (requiresRead) {
+              maybeRead();
+            }
           }
         }
       });
