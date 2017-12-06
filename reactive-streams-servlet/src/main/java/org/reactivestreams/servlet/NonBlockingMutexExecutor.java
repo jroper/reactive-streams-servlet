@@ -56,27 +56,29 @@ class NonBlockingMutexExecutor implements Executor {
       if (thrown instanceof InterruptedException) {
         // TODO: Current task was interrupted, set interrupted flag and proceed is a valid strategy?
         runner.interrupt();
-      } else {
+      } else { // TODO: complement the most appropriate way of dealing with fatal Throwables
         final Thread.UncaughtExceptionHandler ueh = runner.getUncaughtExceptionHandler();
         if (ueh != null)
           ueh.uncaughtException(runner, thrown);
         // TODO: Rethrow or something else? Is there a sensible fallback here?
       }
   }
+
+  // Runs a single RunNode and deals with any Throwables it throws
+  private final void run(final RunNode current) {
+    try { current.runnable.run(); } catch (final Throwable thrown) {
+      reportFailure(Thread.currentThread(), current.runnable, thrown);
+    }
+  }
   
+  // Runs all the RunNodes starting with `next`
   private final void runAll(RunNode next) {
     for(;;) {
       final RunNode current = next;
-      try {
-        current.runnable.run();
-      } catch (final Throwable thrown) {
-        reportFailure(Thread.currentThread(), current.runnable, thrown);
-      }
-      if ((next = current.get()) == null) { // Try advance
-        if (last.compareAndSet(current, null)) break; // End-of-queue reached
-        else { // Wait for pending enqueued element to become available
-          while((next = current.get()) == null); // TODO: Thread.onSpinWait(); ?
-        }
+      run(current);
+      if ((next = current.get()) == null) { // try advance, if we get null test
+        if (last.compareAndSet(current, null)) return; // end-of-queue: we're done.
+        else while((next = current.get()) == null); // try advance until next is visible. TODO: Thread.onSpinWait();?
       }
     }
   }
