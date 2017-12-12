@@ -139,14 +139,11 @@ public class RequestPublisher implements Publisher<ByteBuffer> {
           if (n <= 0) {
             handleError(new IllegalArgumentException("Reactive streams 3.9 spec violation: non-positive subscription request"));
           } else {
-            boolean requiresRead = demand == 0;
-            if (demand < Long.MAX_VALUE) {
-              demand += n;
-              if (demand < 0) {
-                demand = Long.MAX_VALUE;
-              }
+            final long old = demand;
+            if (old < Long.MAX_VALUE) {
+              demand = ((old + n) < 0) ? Long.MAX_VALUE : (old + n); // Overflow protection
             }
-            if (requiresRead) {
+            if (old == 0) {
               maybeRead();
             }
           }
