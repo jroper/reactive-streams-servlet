@@ -23,8 +23,39 @@ import java.nio.charset.Charset;
 import java.util.*;
 import java.util.function.Function;
 
+/**
+ * A multipart/form-data parser.
+ */
 public class MultipartParser {
 
+  /**
+   * Parse the given stream of byte buffers into a stream of {@link StreamedPart}.
+   *
+   * Each {@link StreamedPart} emitted will either be a {@link DataPart}, that is,
+   * a part that does not have a file name and has been buffered into memory, or a
+   * {@link PartPublisher}, that is a part that implements the {@link Publisher}
+   * interface and must be consumed by subscribing to it.
+   *
+   * Each {@link PartPublisher} emitted must be subscribed to in order for the
+   * stream to progress, even if it is going to be ignored.
+   *
+   * If a {@link PartPublisher} stream is cancelled, the entire stream of parts
+   * will be cancelled too.
+   *
+   * The parser needs to do some buffering to parse part headers and data parts.
+   * This buffering is limited by the <code>maxBufferSize</code> parameter. If this
+   * buffer size is exceeded while parsing a part header, the stream will terminate
+   * with an error. If it's exceeded while buffering a data part, that data part
+   * will be emitted as a {@link PartPublisher} instead of as a {@link DataPart}.
+   *
+   * Regardless of what publisher is passed in to this method, the returned publisher
+   * is stateful and cannot be reused.
+   *
+   * @param publisher The publisher to parse.
+   * @param boundary The multipart boundary.
+   * @param maxBufferSize The maximum size of data to buffer.
+   * @return A publisher of streamed parts.
+   */
   public static Publisher<StreamedPart> parse(Publisher<ByteBuffer> publisher, String boundary, int maxBufferSize) {
     Parser parser = new Parser(boundary.getBytes(), maxBufferSize);
 
