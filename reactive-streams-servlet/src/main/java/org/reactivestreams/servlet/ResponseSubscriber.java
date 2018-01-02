@@ -12,6 +12,7 @@ package org.reactivestreams.servlet;
 
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
+import org.reactivestreams.servlet.utils.NonBlockingMutexExecutor;
 
 import javax.servlet.*;
 import java.io.IOException;

@@ -11,7 +11,7 @@ subprojects {
   version = "1.0.0"
 
   ext {
-    reactiveStreamsVersion = "1.0.1"
+    reactiveStreamsVersion = "1.0.2"
     servletVersion = "4.0.0"
     jettyVersion = "9.4.7.v20170914"
     tomcatVersion = "9.0.1"

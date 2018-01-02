@@ -8,7 +8,7 @@
  * You should have received a copy of the CC0 legalcode along with this  *
  * work. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.*
  ************************************************************************/
-package org.reactivestreams.servlet;
+package org.reactivestreams.servlet.utils;
 
 import java.util.Objects;
 import java.util.concurrent.Executor;
@@ -39,7 +39,7 @@ final class RunNode extends AtomicReference<RunNode> {
  * This executor can also be used to address infinite recursion problems, as
  * operations submitted recursively will run sequentially.
  */
-class NonBlockingMutexExecutor implements Executor {
+public class NonBlockingMutexExecutor implements Executor {
   private final AtomicReference<RunNode> last = new AtomicReference<>();
 
   @Override
