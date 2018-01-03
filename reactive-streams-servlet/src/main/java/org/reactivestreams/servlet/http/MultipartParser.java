@@ -18,8 +18,10 @@ import org.reactivestreams.servlet.utils.RichPublisher;
 import javax.servlet.http.Part;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PrintStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.Function;
 
@@ -57,7 +59,7 @@ public class MultipartParser {
    * @return A publisher of streamed parts.
    */
   public static Publisher<StreamedPart> parse(Publisher<ByteBuffer> publisher, String boundary, int maxBufferSize) {
-    Parser parser = new Parser(boundary.getBytes(), maxBufferSize);
+    Parser parser = new Parser(boundary.getBytes(StandardCharsets.UTF_8), maxBufferSize); // FIXME add charset of boundary
 
     return RichPublisher.enrich(publisher)
         .mapConcat(parser)
@@ -92,20 +94,22 @@ public class MultipartParser {
   }
 
   private static class IgnoringSubscriber<T> implements Subscriber<T> {
-    volatile Subscription subscription;
+    boolean subscribed;
     @Override
     public void onSubscribe(Subscription s) {
-      subscription = s;
-      s.request(1);
+      if (!subscribed) {
+        subscribed = true;
+        s.request(Long.MAX_VALUE);
+      } else {
+        s.cancel(); // As per RS spec.
+      }
     }
     @Override
-    public void onNext(Object o) {
-      subscription.request(1);
-    }
+    public void onNext(Object o) { }
     @Override
-    public void onError(Throwable t) {}
+    public void onError(Throwable t) { }
     @Override
-    public void onComplete() {}
+    public void onComplete() { }
   }
 
   // Limitations of this implementation:
@@ -130,6 +134,12 @@ public class MultipartParser {
   //   not supported by this implementation.
 
   private static class Parser implements Function<ByteBuffer, Iterable<Object>> {
+
+    private final static byte HYPHEN = '-';
+    private final static byte CR = '\r';
+    private final static byte LF = '\n';
+    private final static ByteBuffer CRLF = ByteBuffer.wrap(new byte[] {CR, LF}).asReadOnlyBuffer();
+
     // Current chunks to parse
     private final Deque<ByteBuffer> currentChunks = new ArrayDeque<>();
     private final BoyerMoore boundarySearch;
@@ -148,27 +158,21 @@ public class MultipartParser {
 
     private Parser(byte[] boundary, int maxBufferSize) {
       byte[] fullBoundary = new byte[4 + boundary.length];
-      fullBoundary[0] = (byte) '\r';
-      fullBoundary[1] = (byte) '\n';
-      fullBoundary[2] = (byte) '-';
-      fullBoundary[3] = (byte) '-';
+      fullBoundary[0] = CR;
+      fullBoundary[1] = LF;
+      fullBoundary[2] = HYPHEN;
+      fullBoundary[3] = HYPHEN;
       System.arraycopy(boundary, 0, fullBoundary, 4, boundary.length);
 
-      byte[] headerEnd = new byte[4];
-      headerEnd[0] = (byte) '\r';
-      headerEnd[1] = (byte) '\n';
-      headerEnd[2] = (byte) '\r';
-      headerEnd[3] = (byte) '\n';
-
       this.boundarySearch = new BoyerMoore(fullBoundary);
-      this.headerEndSearch = new BoyerMoore(headerEnd);
+      this.headerEndSearch = new BoyerMoore(new byte[] { CR, LF, CR, LF });
       this.maxBufferSize = maxBufferSize;
       this.boundarySize = fullBoundary.length;
 
       // Initialise current chunks to have a CRLF, this ensures that in the case that
       // there is no preamble, we still match the first boundary, which won't be preceeded
       // with CRLF.
-      currentChunks.add(ByteBuffer.wrap(new byte[] {'\r', '\n'}));
+      currentChunks.add(CRLF);
       currentChunksSize = 2;
     }
 
@@ -179,7 +183,7 @@ public class MultipartParser {
         currentChunksSize += byteBuffer.remaining();
         currentMemorySize += byteBuffer.remaining();
 
-        toEmit = new ArrayList<>();
+        toEmit = new ArrayList<>(); // TODO only allocate if needed, use Collections.emptyList() otherwise
 
         try {
           while (state != State.IGNORING_EPILOGUE) {
@@ -203,7 +207,8 @@ public class MultipartParser {
           // Ignore
         }
 
-        List<Object> result = toEmit;
+
+        List<Object> result = toEmit.isEmpty() ? Collections.emptyList() : toEmit;
         toEmit = null;
         return result;
       } else {
@@ -235,9 +240,9 @@ public class MultipartParser {
       byte nextByte = byteAt(startEndOfBoundary);
       byte byteAfter = byteAt(startEndOfBoundary + 1);
       dropBuffer(startEndOfBoundary + 2);
-      if (nextByte == (byte) '-' && byteAfter == (byte) '-') {
+      if (nextByte == HYPHEN && byteAfter == HYPHEN) {
         return State.IGNORING_EPILOGUE;
-      } else if (nextByte == (byte) '\r' && byteAfter == (byte) '\n') {
+      } else if (nextByte == CR && byteAfter == LF) {
         return State.PARSING_HEADER;
       } else {
         throw new MultipartException("Illegal characters after boundary: " + String.format("0x%02X%02X", nextByte, byteAfter));
@@ -250,7 +255,7 @@ public class MultipartParser {
         int endOfHeader = headerEndSearch.search(currentChunks);
 
         // Not very efficient, but simple for now.
-        String headerString = readString(endOfHeader, "utf-8");
+        String headerString = readString(endOfHeader, StandardCharsets.UTF_8);
 
         String[] headers = headerString.split("\r\n");
         Map<String, List<String>> headerMap = new HashMap<>();
@@ -320,9 +325,7 @@ public class MultipartParser {
       resetMemoryBuffer();
       try {
         int index = boundarySearch.search(currentChunks);
-        // todo parse charset from content type
-        String charset = "utf-8";
-        String data = readString(index, charset);
+        String data = readString(index, StandardCharsets.UTF_8); // FIXME parse charset from content type
         State nextState = parseEndOfBoundary(index);
         emit(currentPart.withData(data));
         currentPart = null;
@@ -350,20 +353,22 @@ public class MultipartParser {
       }
     }
 
-    private String readString(int length, String charset) {
-      byte[] bytes = new byte[length];
+    private String readString(int length, Charset charset) {
+      byte[] bytes = new byte[length]; // todo avoid allocating new buffer per read
       int copied = 0;
       for (ByteBuffer buffer: currentChunks) {
         int toCopy = Math.min(length - copied, buffer.remaining());
-        buffer.mark();
-        buffer.get(bytes, copied, toCopy);
-        buffer.reset();
-        copied += toCopy;
+        if (toCopy > 0) {
+          buffer.mark();
+          buffer.get(bytes, copied, toCopy);
+          buffer.reset();
+          copied += toCopy;
+        }
         if (copied == length) {
           break;
         }
       }
-      return new String(bytes, Charset.forName(charset));
+      return (copied < 1) ? "" : new String(bytes, charset);
     }
 
     private void emitBuffer(int size) {
@@ -441,17 +446,17 @@ public class MultipartParser {
       }
     }
 
-    private void printBuffer() {
-      System.out.println("=== PRINTING BUFFER ===");
+    private void printBuffer(PrintStream out) {
+      out.println("=== PRINTING BUFFER ===");
       currentChunks.forEach(chunk -> {
         byte[] bytes = new byte[chunk.remaining()];
         chunk.mark();
         chunk.get(bytes);
         chunk.reset();
-        System.out.print(new String(bytes));
+        out.print(new String(bytes, StandardCharsets.UTF_8)); // FIXME use correct charset
       });
-      System.out.println();
-      System.out.println("=== END BUFFER ===");
+      out.println();
+      out.println("=== END BUFFER ===");
     }
 
   }
